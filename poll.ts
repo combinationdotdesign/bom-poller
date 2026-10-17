@@ -1,27 +1,11 @@
 // Polls OpenSky around Mumbai (VABB), saves a snapshot, and records runway arrivals/departures.
-// Credit use: bounding box <= 25 sq deg = 1 credit per call. Poll speed follows the day plan below (about 3,780 credits a day of 4,000).
+// Credit use: bounding box <= 25 sq deg = 1 credit per call. One call per ~30 s = ~2,900/day (free account: 4,000/day).
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const ID = Deno.env.get("OPENSKY_CLIENT_ID"), SEC = Deno.env.get("OPENSKY_CLIENT_SECRET");
 const TOKEN_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
 const BOX = { lamin: 17.09, lamax: 21.09, lomin: 70.87, lomax: 74.87 }; // 4 x 4 deg around VABB = 16 sq deg (1 credit)
-const ANON_GAP = 240000, RUN_MS = 342000, AUTH_TIMEOUT = 15000, STATES_TIMEOUT = 25000;
-// Polling plan (IST): [from hour, to hour, seconds between polls]. 1 credit per poll, plan = 3,780 credits/day of 4,000.
-const PLAN: [number, number, number][] = [
-  [0, 4, 60],
-  [4, 6, 30],
-  [6, 9, 15],
-  [9, 13, 20],
-  [13, 17, 30],
-  [17, 20, 15],
-  [20, 23, 20],
-  [23, 24, 30],
-];
-// Seconds between polls right now (India time = UTC + 5:30), from the plan above.
-function pollMs() {
-  const h = ((Date.now() + 19800000) / 3600000) % 24;
-  return (PLAN.find(([a, b]) => h >= a && h < b) ?? [0, 24, 60])[2] * 1000;
-}
+const TICK = 30000, MIN_GAP = 28000, ANON_GAP = 240000, RUN_MS = 20000000, AUTH_TIMEOUT = 15000, STATES_TIMEOUT = 25000;
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
 // VABB runways (OurAirports): [low end, high end, threshold A, threshold B]
@@ -36,7 +20,7 @@ const rwy = RW.map(([le, he, a, b]) => {
   return { le, he, A, L, ux: dx / L, uz: dz / L, hdg: (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360 };
 });
 const angD = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
-// Polls are 15-60 s apart, so allow a wide window past the runway for departures.
+// Polls are ~30 s apart, so allow a wide window past the runway for departures.
 function runwayAt(lat: number, lon: number, trk: number, landing: boolean): string {
   const [x, z] = P(lat, lon);
   for (const r of rwy) {
@@ -74,7 +58,7 @@ async function tick() {
   if (!headers.Authorization) mode = "anonymous";
   // Credit guard: never poll more often than the gap, no matter who calls the function.
   const { data: snap } = await sb.from("bom_snapshot").select("ts").eq("id", 1).single();
-  if (snap && Date.now() - Date.parse(snap.ts) < (mode === "login" ? pollMs() * 0.8 : ANON_GAP)) return { skipped: "fresh", mode, note };
+  if (snap && Date.now() - Date.parse(snap.ts) < (mode === "login" ? MIN_GAP : ANON_GAP)) return { skipped: "fresh", mode, note };
 
   const q = new URLSearchParams({ ...Object.fromEntries(Object.entries(BOX).map(([k, v]) => [k, String(v)])), extended: "1" });
   const res = await fetch("https://opensky-network.org/api/states/all?" + q, { headers, signal: AbortSignal.timeout(STATES_TIMEOUT) }).catch((e) => { throw new Error("OpenSky DATA step failed: " + e.name + " (" + (e.message ?? e) + ")"); });
@@ -132,7 +116,7 @@ async function main() {
   while (true) {
     const t0 = Date.now();
     try { console.log(new Date().toISOString(), JSON.stringify(await tick())); } catch (e) { console.log("error", String(e)); }
-    const wait = Math.max(0, pollMs() - (Date.now() - t0));
+    const wait = Math.max(0, TICK - (Date.now() - t0));
     if (Date.now() + wait >= end) break;
     await sleep(wait);
   }
