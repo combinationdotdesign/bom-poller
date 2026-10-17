@@ -1,15 +1,17 @@
-name: bom-opensky-poll
+
+# runs every 5 minutes
+name: opensky-poll
 on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 concurrency:
-  group: bom-opensky-poll
+  group: opensky-poll
   cancel-in-progress: false
 jobs:
   poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
@@ -21,4 +23,3 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OPENSKY_CLIENT_ID: ${{ secrets.OPENSKY_CLIENT_ID }}
           OPENSKY_CLIENT_SECRET: ${{ secrets.OPENSKY_CLIENT_SECRET }}
-          
