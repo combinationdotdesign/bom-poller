@@ -1,8 +1,11 @@
 name: bom-opensky-poll
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *"   # backup only; GitHub often skips or delays this
   workflow_dispatch:
+permissions:
+  contents: read
+  actions: write            # lets the last step start the next run
 concurrency:
   group: bom-opensky-poll
   cancel-in-progress: false
@@ -21,3 +24,11 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OPENSKY_CLIENT_ID: ${{ secrets.OPENSKY_CLIENT_ID }}
           OPENSKY_CLIENT_SECRET: ${{ secrets.OPENSKY_CLIENT_SECRET }}
+      # Start the next run (also when the poll step failed), after a short pause so a broken run cannot loop too fast.
+      - name: Start next run
+        if: always()
+        run: |
+          sleep 15
+          gh workflow run poll.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}
