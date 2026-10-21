@@ -3,9 +3,11 @@ on:
   schedule:
     - cron: "*/5 * * * *"   # backup only; GitHub often skips or delays this
   workflow_dispatch:
+  repository_dispatch:
+    types: [bom-poll]       # used by the last step to start the next run
 permissions:
-  contents: read
-  actions: write            # lets the last step start the next run
+  contents: write           # needed to send repository_dispatch
+  actions: write
 concurrency:
   group: bom-opensky-poll
   cancel-in-progress: false
@@ -29,6 +31,6 @@ jobs:
         if: always()
         run: |
           sleep 15
-          gh workflow run poll.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
+          gh api "repos/$GITHUB_REPOSITORY/dispatches" -f event_type=bom-poll
         env:
           GH_TOKEN: ${{ github.token }}
